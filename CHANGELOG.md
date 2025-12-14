@@ -1,5 +1,11 @@
 # aywson
 
+## 0.0.5
+
+### Patch Changes
+
+- [#4](https://github.com/threepointone/aywson/pull/4) [`175fe37`](https://github.com/threepointone/aywson/commit/175fe378b44fc4969c12c39ecb5e7ecadf7831ba) Thanks [@threepointone](https://github.com/threepointone)! - fix tagline
+
 ## 0.0.4
 
 ### Patch Changes
