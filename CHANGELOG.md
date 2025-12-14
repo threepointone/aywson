@@ -1,5 +1,11 @@
 # aywson
 
+## 0.0.4
+
+### Patch Changes
+
+- [`2f528b3`](https://github.com/threepointone/aywson/commit/2f528b37ee296b579b97a92247bf84d29f192947) Thanks [@threepointone](https://github.com/threepointone)! - another
+
 ## 0.0.3
 
 ### Patch Changes
