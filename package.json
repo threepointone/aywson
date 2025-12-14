@@ -1,6 +1,6 @@
 {
   "name": "aywson",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "description": "Modify JSONC while preserving comments and formatting.",
   "main": "./dist/index.cjs",
   "types": "./dist/index.d.mts",
