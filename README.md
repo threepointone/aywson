@@ -13,6 +13,26 @@ npm install aywson
 ## Usage
 
 ```ts
+import {
+  modify, // replace fields, delete unlisted
+  get, // read value at path
+  set, // write value at path
+  remove, // delete field at path
+  merge, // update fields, keep unlisted
+  replace, // alias for modify
+  patch, // alias for merge
+  rename, // rename a key
+  move, // move field to new path
+  setComment, // add comment above field
+  removeComment // remove comment above field
+} from "aywson";
+```
+
+## `modify`
+
+Replace fields, delete unlisted. Comments above deleted fields are also deleted, unless they start with `**`.
+
+```ts
 import { modify } from "aywson";
 
 modify('{ /* keep this */ "a": 1, "b": 2 }', { a: 10 });
@@ -20,24 +40,6 @@ modify('{ /* keep this */ "a": 1, "b": 2 }', { a: 10 });
 ```
 
 `modify` uses **replace semantics** — fields not in `changes` are deleted. Comments above deleted fields are also deleted, unless they start with `**`.
-
-## All Exports
-
-```ts
-import {
-  modify,
-  get,
-  set,
-  remove,
-  merge,
-  replace,
-  patch,
-  rename,
-  move,
-  setComment,
-  removeComment
-} from "aywson";
-```
 
 ## Path-based Operations
 
