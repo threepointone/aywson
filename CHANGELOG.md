@@ -1,5 +1,14 @@
 # aywson
 
+## 0.0.6
+
+### Patch Changes
+
+- [#6](https://github.com/threepointone/aywson/pull/6) [`f984737`](https://github.com/threepointone/aywson/commit/f984737eac6b3c6db4415c092f9d9ab6683bb64e) Thanks [@threepointone](https://github.com/threepointone)! - Change comment preservation syntax from "fieldName:" to "\*\*"
+
+  Comments above deleted fields are now removed by default. To preserve a
+  comment when its field is deleted, start the comment with "\*\*".
+
 ## 0.0.5
 
 ### Patch Changes
