@@ -1,5 +1,13 @@
 # aywson
 
+## 0.0.7
+
+### Patch Changes
+
+- [#8](https://github.com/threepointone/aywson/pull/8) [`219f778`](https://github.com/threepointone/aywson/commit/219f77857f7483a98f283d1d95972a5e485fafaa) Thanks [@threepointone](https://github.com/threepointone)! - Add CLI support for aywson with commands and tests
+
+  Introduces a CLI for aywson with commands such as get, set, remove, modify, merge, rename, move, comment, and uncomment, as documented in the updated README. Adds src/cli-lib.ts for CLI logic, src/cli.ts as the entry point, and src/cli.test.ts for unit tests. Updates package.json to include CLI entry, dependencies (chalk, @types/node), and build script. tsconfig.json is updated to include Node.js types.
+
 ## 0.0.6
 
 ### Patch Changes
