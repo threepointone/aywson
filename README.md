@@ -19,7 +19,7 @@ modify('{ /* keep this */ "a": 1, "b": 2 }', { a: 10 });
 // → '{ /* keep this */ "a": 10 }' — comment preserved, b deleted
 ```
 
-`modify` uses **replace semantics** — fields not in `changes` are deleted. Comments are preserved, and comments starting with `"fieldName:"` are deleted along with their field.
+`modify` uses **replace semantics** — fields not in `changes` are deleted. Comments above deleted fields are also deleted, unless they start with `**`.
 
 ## All Exports
 
@@ -35,7 +35,7 @@ import {
   rename,
   move,
   setComment,
-  removeComment,
+  removeComment
 } from "aywson";
 ```
 
@@ -70,12 +70,12 @@ set('{ "foo": "bar" }', ["foo"], "baz");
 
 ### `remove(json, path)`
 
-Remove a field. Associated comments (starting with `"fieldName:"`) are also removed.
+Remove a field. Comments above the field are also removed, unless they start with `**`.
 
 ```ts
 remove(
   `{
-  // foo: this is foo
+  // this is foo
   "foo": "bar",
   "baz": 123
 }`,
@@ -149,9 +149,9 @@ setComment(
   "enabled": true
 }`,
   ["enabled"],
-  "enabled: controls the feature"
+  "controls the feature"
 );
-// → adds "// enabled: controls the feature" above the field
+// → adds "// controls the feature" above the field
 ```
 
 ### `removeComment(json, path)`
@@ -169,26 +169,26 @@ removeComment(
 // → '{ "foo": "bar" }'
 ```
 
-## Comment Association
+## Preserving Comments
 
-When deleting fields, comments starting with `"fieldName:"` are deleted together:
+When deleting fields, comments are deleted by default. Start a comment with `**` to preserve it:
 
 ```ts
 remove(
   `{
-  // config: important settings
+  // this comment will be deleted
   "config": {}
 }`,
   ["config"]
 );
-// → comment deleted with field
+// → '{}' — comment deleted with field
 
 remove(
   `{
-  // general note (no colon pattern)
+  // ** this comment will be preserved
   "config": {}
 }`,
   ["config"]
 );
-// → comment preserved
+// → '{ // ** this comment will be preserved }' — comment kept
 ```

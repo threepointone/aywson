@@ -68,13 +68,13 @@ function getPropertyRange(
 }
 
 /**
- * Look backwards from propertyOffset for a comment that starts with "fieldName:"
- * Returns the start position of the comment line if found, null otherwise.
+ * Look backwards from propertyOffset for a comment.
+ * Returns the start position of the comment line if it should be deleted with the field.
+ * Comments starting with "**" are preserved (returns null).
  */
 function findAssociatedCommentStart(
   json: string,
-  propertyOffset: number,
-  fieldName: string
+  propertyOffset: number
 ): number | null {
   let pos = propertyOffset - 1;
 
@@ -106,14 +106,15 @@ function findAssociatedCommentStart(
     while (i >= 1) {
       if (json[i - 1] === "/" && json[i] === "*") {
         const commentContent = json.slice(i + 1, pos - 1).trim();
-        if (commentContent.startsWith(`${fieldName}:`)) {
-          let commentLineStart = i - 1;
-          while (commentLineStart > 0 && json[commentLineStart - 1] !== "\n") {
-            commentLineStart--;
-          }
-          return commentLineStart;
+        // Comments starting with ** are preserved
+        if (commentContent.startsWith("**")) {
+          return null;
         }
-        return null;
+        let commentLineStart = i - 1;
+        while (commentLineStart > 0 && json[commentLineStart - 1] !== "\n") {
+          commentLineStart--;
+        }
+        return commentLineStart;
       }
       i--;
     }
@@ -131,9 +132,11 @@ function findAssociatedCommentStart(
 
   if (line.startsWith("//")) {
     const commentContent = line.slice(2).trim();
-    if (commentContent.startsWith(`${fieldName}:`)) {
-      return lineStart;
+    // Comments starting with ** are preserved
+    if (commentContent.startsWith("**")) {
+      return null;
     }
+    return lineStart;
   }
 
   return null;
@@ -314,17 +317,15 @@ export function set(json: string, path: JSONPath, value: unknown): string {
  * Remove a field at a path (with associated comment handling)
  */
 export function remove(json: string, path: JSONPath): string {
-  const fieldName = String(path[path.length - 1]);
-
   const found = findProperty(json, path);
   if (!found) return json;
 
   const { propertyNode } = found;
   const { lineStart, isSingleLine } = getPropertyRange(json, propertyNode);
 
-  // Check for associated comment
+  // Check for associated comment (comments starting with ** are preserved)
   const commentStart = !isSingleLine
-    ? findAssociatedCommentStart(json, propertyNode.offset, fieldName)
+    ? findAssociatedCommentStart(json, propertyNode.offset)
     : null;
 
   // Determine delete start
@@ -462,7 +463,6 @@ export function rename(json: string, path: JSONPath, newKey: string): string {
   if (!found) return json;
 
   const { node, propertyNode } = found;
-  const fieldName = String(path[path.length - 1]);
 
   // Get the value
   const value = getNodeValue(node);
@@ -482,17 +482,9 @@ export function rename(json: string, path: JSONPath, newKey: string): string {
   // Add new key with the value
   result = set(result, newPath, value);
 
-  // If there was a comment, update it to use the new key name
+  // If there was a comment, preserve it
   if (commentInfo) {
-    const content = commentInfo.content;
-    // If comment starts with old field name, update it
-    if (content.startsWith(`${fieldName}:`)) {
-      const newComment = `${newKey}:${content.slice(fieldName.length + 1)}`;
-      result = setComment(result, newPath, newComment);
-    } else {
-      // Keep the original comment
-      result = setComment(result, newPath, content);
-    }
+    result = setComment(result, newPath, commentInfo.content);
   }
 
   return result;

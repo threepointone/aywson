@@ -158,9 +158,9 @@ describe("modify", () => {
 }`);
     });
 
-    it("should delete a field and its associated comment (line comment)", () => {
+    it("should delete a field and its comment (line comment)", () => {
       const json = `{
-  // abc: this is the abc field
+  // this is the abc field
   "abc": 123,
   "def": 456
 }`;
@@ -170,9 +170,9 @@ describe("modify", () => {
 }`);
     });
 
-    it("should delete a field and its associated comment (block comment)", () => {
+    it("should delete a field and its comment (block comment)", () => {
       const json = `{
-  /* abc: this is the abc field */
+  /* this is the abc field */
   "abc": 123,
   "def": 456
 }`;
@@ -182,23 +182,36 @@ describe("modify", () => {
 }`);
     });
 
-    it("should preserve non-associated comment when deleting", () => {
+    it("should preserve comment starting with ** when deleting field", () => {
       const json = `{
-  // some general comment
+  // ** important note about abc
   "abc": 123,
   "def": 456
 }`;
       const result = modify(json, { def: 456 });
       expect(result).toBe(`{
-  // some general comment
+  // ** important note about abc
   "def": 456
 }`);
     });
 
-    it("should delete nested field not mentioned in changes", () => {
+    it("should preserve block comment starting with ** when deleting field", () => {
+      const json = `{
+  /* ** important note about abc */
+  "abc": 123,
+  "def": 456
+}`;
+      const result = modify(json, { def: 456 });
+      expect(result).toBe(`{
+  /* ** important note about abc */
+  "def": 456
+}`);
+    });
+
+    it("should delete nested field and its comment", () => {
       const json = `{
   "config": {
-    // enabled: controls whether feature is on
+    // controls whether feature is on
     "enabled": true,
     "count": 5
   }
@@ -314,9 +327,9 @@ describe("remove", () => {
 }`);
   });
 
-  it("should remove a field with associated comment", () => {
+  it("should remove a field with its comment", () => {
     const json = `{
-  // foo: this is foo
+  // this is foo
   "foo": "bar",
   "baz": 123
 }`;
@@ -326,15 +339,15 @@ describe("remove", () => {
 }`);
   });
 
-  it("should preserve non-associated comments", () => {
+  it("should preserve comments starting with **", () => {
     const json = `{
-  // general comment
+  // ** important note
   "foo": "bar",
   "baz": 123
 }`;
     const result = remove(json, ["foo"]);
     expect(result).toBe(`{
-  // general comment
+  // ** important note
   "baz": 123
 }`);
   });
