@@ -1,5 +1,11 @@
 # aywson
 
+## 0.0.3
+
+### Patch Changes
+
+- [`04c1ae4`](https://github.com/threepointone/aywson/commit/04c1ae4cb5eaee5df18056fc71d58ee557165311) Thanks [@threepointone](https://github.com/threepointone)! - trigger a release
+
 ## 0.0.2
 
 ### Patch Changes
