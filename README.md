@@ -1,6 +1,6 @@
 # aywson
 
-𝖆𝖗𝖊 𝖞𝖔𝖚 𝖜𝖎𝖓𝖓𝖎𝖓𝖌, 𝖘𝖔𝖓?
+𝖆𝖗𝖊 𝖞𝖆 𝖜𝖎𝖓𝖓𝖎𝖓𝖌, 𝖘𝖔𝖓?
 
 ![Are ya winning, son?](aywson.png)
 

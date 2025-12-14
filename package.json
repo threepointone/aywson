@@ -38,6 +38,8 @@
   },
   "keywords": [
     "jsonc",
+    "json",
+    "configuration",
     "comments",
     "formatting",
     "modify"
