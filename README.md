@@ -192,3 +192,35 @@ remove(
 );
 // → '{ // ** this comment will be preserved }' — comment kept
 ```
+
+## CLI
+
+```bash
+# Read a value
+aywson get config.json database.host
+
+# Set a value (shows diff and writes to file)
+aywson set config.json database.port 5433
+
+# Preview without writing
+aywson set --dry-run config.json database.port 5433
+
+# Modify with replace semantics
+aywson modify config.json '{"database": {"host": "prod.db.com"}}'
+
+# Merge without deleting existing fields
+aywson merge config.json '{"newField": true}'
+
+# Remove a field
+aywson remove config.json database.debug
+
+# Add a comment above a field
+aywson comment config.json database.host "production database"
+
+# Remove a comment
+aywson uncomment config.json database.host
+```
+
+Mutating commands always show a colored diff. Use `--dry-run` (`-n`) to preview without writing.
+
+Path syntax uses dot-notation: `config.database.host` or bracket notation for indices: `items[0].name`
