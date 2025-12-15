@@ -1,5 +1,13 @@
 # aywson
 
+## 0.0.11
+
+### Patch Changes
+
+- [`3b018a6`](https://github.com/threepointone/aywson/commit/3b018a6943c6326f9942468df65923214f0fabcc) Thanks [@threepointone](https://github.com/threepointone)! - Add comparison section with comment-json to README
+
+  Added a detailed comparison between aywson and the comment-json package, including differences in architecture, feature set, and usage scenarios. Also included example code snippets to illustrate typical usage for both libraries.
+
 ## 0.0.10
 
 ### Patch Changes
