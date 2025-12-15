@@ -1,5 +1,13 @@
 # aywson
 
+## 0.0.12
+
+### Patch Changes
+
+- [`6ceab82`](https://github.com/threepointone/aywson/commit/6ceab82c567b99d79249941ef98f8cbd78365dff) Thanks [@threepointone](https://github.com/threepointone)! - Add support for trailing comments in JSON operations
+
+  Implements getTrailingComment, setTrailingComment, and removeTrailingComment functions to handle trailing comments after fields. Updates all relevant operations (get, set, remove, modify, merge, sort, etc.) to preserve or manipulate trailing comments as appropriate. Enhances CLI and documentation to support and describe trailing comment features, and adds comprehensive tests for trailing comment behavior.
+
 ## 0.0.11
 
 ### Patch Changes
