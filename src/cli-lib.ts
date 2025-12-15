@@ -2,14 +2,17 @@ import { readFileSync, writeFileSync } from "node:fs";
 import chalk from "chalk";
 import {
   get,
+  getComment,
   merge,
   modify,
   move,
+  parse,
   remove,
   removeComment,
   rename,
   set,
-  setComment
+  setComment,
+  sort
 } from "./index.js";
 
 // =============================================================================
@@ -144,6 +147,7 @@ Usage:
   aywson <command> [options] <file> [args...]
 
 Commands:
+  parse <file>                        Parse JSONC and output as JSON
   get <file> <path>                   Get value at path
   set <file> <path> <value>           Set value at path
   remove <file> <path>                Remove field at path
@@ -151,11 +155,13 @@ Commands:
   merge <file> <json>                 Merge without deleting
   rename <file> <path> <newKey>       Rename a key
   move <file> <fromPath> <toPath>     Move field to new location
-  comment <file> <path> <text>        Set comment above a field
+  sort <file> [path]                  Sort object keys alphabetically
+  comment <file> <path> [text]        Get or set comment above a field
   uncomment <file> <path>             Remove comment above a field
 
 Options:
   --dry-run, -n    Show diff but don't write to file
+  --no-deep        For sort: only sort specified object, not nested
   --help, -h       Show this help
   --version, -v    Show version
 
@@ -164,10 +170,13 @@ Path Syntax:
   Array indices: items.0 or items[0]
 
 Examples:
+  aywson parse config.jsonc
   aywson get config.json database.host
   aywson set config.json database.port 5433
   aywson set --dry-run config.json database.port 5433
   aywson modify config.json '{"database": {"host": "prod.db.com"}}'
+  aywson sort config.json
+  aywson sort config.json dependencies --no-deep
 `);
 }
 
@@ -188,6 +197,7 @@ interface ParsedArgs {
   file: string;
   args: string[];
   dryRun: boolean;
+  noDeep: boolean;
 }
 
 function parseArgs(argv: string[]): ParsedArgs | null {
@@ -206,6 +216,7 @@ function parseArgs(argv: string[]): ParsedArgs | null {
 
   // Filter out flags
   const dryRun = args.includes("--dry-run") || args.includes("-n");
+  const noDeep = args.includes("--no-deep");
   const positional = args.filter((a) => !a.startsWith("-") || a === "-");
 
   const command = positional[0];
@@ -217,7 +228,7 @@ function parseArgs(argv: string[]): ParsedArgs | null {
     process.exit(1);
   }
 
-  return { command, file, args: positional.slice(2), dryRun };
+  return { command, file, args: positional.slice(2), dryRun, noDeep };
 }
 
 function readInput(file: string): string {
@@ -240,12 +251,18 @@ export function run(): void {
   const parsed = parseArgs(process.argv);
   if (!parsed) return;
 
-  const { command, file, args, dryRun } = parsed;
+  const { command, file, args, dryRun, noDeep } = parsed;
 
   try {
     const json = readInput(file);
 
     switch (command) {
+      case "parse": {
+        const value = parse(json);
+        console.log(JSON.stringify(value, null, 2));
+        break;
+      }
+
       case "get": {
         const pathArg = args[0];
         if (!pathArg) {
@@ -335,16 +352,35 @@ export function run(): void {
         break;
       }
 
+      case "sort": {
+        const pathArg = args[0];
+        const path = pathArg ? parsePath(pathArg) : [];
+        const result = sort(json, path, { deep: !noDeep });
+        handleMutation(file, json, result, dryRun);
+        break;
+      }
+
       case "comment": {
         const pathArg = args[0];
         const textArg = args[1];
-        if (!pathArg || !textArg) {
-          console.error("Error: comment requires path and text arguments");
+        if (!pathArg) {
+          console.error("Error: comment requires a path argument");
           process.exit(1);
         }
         const path = parsePath(pathArg);
-        const result = setComment(json, path, textArg);
-        handleMutation(file, json, result, dryRun);
+        if (textArg === undefined) {
+          // Get comment
+          const comment = getComment(json, path);
+          if (comment === null) {
+            console.log("(no comment)");
+          } else {
+            console.log(comment);
+          }
+        } else {
+          // Set comment
+          const result = setComment(json, path, textArg);
+          handleMutation(file, json, result, dryRun);
+        }
         break;
       }
 

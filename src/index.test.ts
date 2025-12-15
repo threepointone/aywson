@@ -1,17 +1,20 @@
 import { describe, expect, it } from "vitest";
 import {
   get,
+  getComment,
   has,
   merge,
   modify,
   move,
+  parse,
   patch,
   remove,
   removeComment,
   rename,
   replace,
   set,
-  setComment
+  setComment,
+  sort
 } from "./index";
 
 describe("modify", () => {
@@ -280,6 +283,69 @@ describe("modify", () => {
   });
 });
 
+describe("parse", () => {
+  it("should parse simple JSON", () => {
+    const result = parse('{ "foo": "bar" }');
+    expect(result).toEqual({ foo: "bar" });
+  });
+
+  it("should parse JSON with line comments", () => {
+    const result = parse(`{
+      // this is a comment
+      "foo": "bar"
+    }`);
+    expect(result).toEqual({ foo: "bar" });
+  });
+
+  it("should parse JSON with block comments", () => {
+    const result = parse(`{
+      /* block comment */
+      "foo": "bar"
+    }`);
+    expect(result).toEqual({ foo: "bar" });
+  });
+
+  it("should parse JSON with trailing commas", () => {
+    const result = parse(`{
+      "foo": "bar",
+      "baz": 123,
+    }`);
+    expect(result).toEqual({ foo: "bar", baz: 123 });
+  });
+
+  it("should parse arrays", () => {
+    const result = parse("[1, 2, 3]");
+    expect(result).toEqual([1, 2, 3]);
+  });
+
+  it("should parse arrays with trailing commas", () => {
+    const result = parse("[1, 2, 3,]");
+    expect(result).toEqual([1, 2, 3]);
+  });
+
+  it("should parse nested objects", () => {
+    const result = parse('{ "config": { "enabled": true } }');
+    expect(result).toEqual({ config: { enabled: true } });
+  });
+
+  it("should support generic type parameter", () => {
+    interface Config {
+      name: string;
+      count: number;
+    }
+    const result = parse<Config>('{ "name": "test", "count": 42 }');
+    expect(result.name).toBe("test");
+    expect(result.count).toBe(42);
+  });
+
+  it("should parse primitive values", () => {
+    expect(parse("123")).toBe(123);
+    expect(parse('"hello"')).toBe("hello");
+    expect(parse("true")).toBe(true);
+    expect(parse("null")).toBe(null);
+  });
+});
+
 describe("get", () => {
   it("should get a value at a path", () => {
     const json = '{ "foo": "bar", "baz": 123 }';
@@ -352,6 +418,84 @@ describe("set", () => {
     const json = '{ "foo": "bar" }';
     const result = set(json, ["config", "enabled"], true);
     expect(result).toBe('{ "foo": "bar","config": {"enabled":true} }');
+  });
+
+  it("should set a value with a comment", () => {
+    const json = `{
+  "foo": "bar"
+}`;
+    const result = set(json, ["foo"], "baz", "this is foo");
+    expect(result).toContain("// this is foo");
+    expect(result).toContain('"foo": "baz"');
+  });
+
+  it("should replace existing comment when setting with comment", () => {
+    const json = `{
+  // old comment
+  "foo": "bar"
+}`;
+    const result = set(json, ["foo"], "baz", "new comment");
+    expect(result).toContain("// new comment");
+    expect(result).not.toContain("old comment");
+    expect(result).toContain('"foo": "baz"');
+  });
+
+  it("should set value without comment when comment is undefined", () => {
+    const json = `{
+  // existing comment
+  "foo": "bar"
+}`;
+    const result = set(json, ["foo"], "baz");
+    expect(result).toContain("// existing comment");
+    expect(result).toContain('"foo": "baz"');
+  });
+});
+
+describe("getComment", () => {
+  it("should get a line comment above a field", () => {
+    const json = `{
+  // this is foo
+  "foo": "bar"
+}`;
+    expect(getComment(json, ["foo"])).toBe("this is foo");
+  });
+
+  it("should get a block comment above a field", () => {
+    const json = `{
+  /* block comment */
+  "foo": "bar"
+}`;
+    expect(getComment(json, ["foo"])).toBe("block comment");
+  });
+
+  it("should return null if no comment exists", () => {
+    const json = `{
+  "foo": "bar"
+}`;
+    expect(getComment(json, ["foo"])).toBeNull();
+  });
+
+  it("should return null for non-existent path", () => {
+    const json = '{ "foo": "bar" }';
+    expect(getComment(json, ["nonexistent"])).toBeNull();
+  });
+
+  it("should get comment from nested field", () => {
+    const json = `{
+  "config": {
+    // nested comment
+    "enabled": true
+  }
+}`;
+    expect(getComment(json, ["config", "enabled"])).toBe("nested comment");
+  });
+
+  it("should preserve ** prefix in comment content", () => {
+    const json = `{
+  // ** important note
+  "foo": "bar"
+}`;
+    expect(getComment(json, ["foo"])).toBe("** important note");
   });
 });
 
@@ -566,6 +710,257 @@ describe("removeComment", () => {
   "foo": "bar"
 }`;
     const result = removeComment(json, ["foo"]);
+    expect(result).toBe(json);
+  });
+});
+
+describe("sort", () => {
+  it("should sort keys alphabetically", () => {
+    const json = `{
+  "z": 1,
+  "a": 2,
+  "m": 3
+}`;
+    const result = sort(json);
+    expect(result).toBe(`{
+  "a": 2,
+  "m": 3,
+  "z": 1
+}`);
+  });
+
+  it("should preserve comments with their keys", () => {
+    const json = `{
+  // z comment
+  "z": 1,
+  // a comment
+  "a": 2
+}`;
+    const result = sort(json);
+    expect(result).toContain("// a comment");
+    expect(result).toContain("// z comment");
+    // a should come before z
+    const aPos = result.indexOf('"a"');
+    const zPos = result.indexOf('"z"');
+    expect(aPos).toBeLessThan(zPos);
+  });
+
+  it("should preserve block comments with their keys", () => {
+    const json = `{
+  /* z block */
+  "z": 1,
+  /* a block */
+  "a": 2
+}`;
+    const result = sort(json);
+    expect(result).toContain("/* a block */");
+    expect(result).toContain("/* z block */");
+  });
+
+  it("should handle single-line objects", () => {
+    const json = '{ "z": 1, "a": 2, "m": 3 }';
+    const result = sort(json);
+    expect(result).toBe('{ "a": 2, "m": 3, "z": 1 }');
+  });
+
+  it("should sort nested objects when deep=true (default)", () => {
+    const json = `{
+  "outer": {
+    "z": 1,
+    "a": 2
+  }
+}`;
+    const result = sort(json);
+    const aPos = result.indexOf('"a"');
+    const zPos = result.indexOf('"z"');
+    expect(aPos).toBeLessThan(zPos);
+  });
+
+  it("should not sort nested objects when deep=false", () => {
+    const json = `{
+  "z": 1,
+  "a": {
+    "z": 1,
+    "a": 2
+  }
+}`;
+    const result = sort(json, [], { deep: false });
+    // Outer should be sorted (a before z)
+    const outerAPos = result.indexOf('"a"');
+    const outerZPos = result.indexOf('"z": 1');
+    expect(outerAPos).toBeLessThan(outerZPos);
+    // Inner should still have z before a
+    const innerContent = result.slice(result.indexOf("{", 1));
+    expect(innerContent.indexOf('"z"')).toBeLessThan(
+      innerContent.indexOf('"a": 2')
+    );
+  });
+
+  it("should accept custom comparator", () => {
+    const json = `{
+  "a": 1,
+  "z": 2
+}`;
+    // Reverse alphabetical
+    const result = sort(json, [], { comparator: (a, b) => b.localeCompare(a) });
+    const aPos = result.indexOf('"a"');
+    const zPos = result.indexOf('"z"');
+    expect(zPos).toBeLessThan(aPos);
+  });
+
+  it("should handle already sorted objects", () => {
+    const json = `{
+  "a": 1,
+  "b": 2,
+  "c": 3
+}`;
+    const result = sort(json);
+    expect(result).toBe(json);
+  });
+
+  it("should handle objects with various value types", () => {
+    const json = `{
+  "string": "hello",
+  "number": 42,
+  "array": [1, 2, 3],
+  "null": null,
+  "bool": true
+}`;
+    const result = sort(json);
+    // Should be sorted: array, bool, null, number, string
+    const arrayPos = result.indexOf('"array"');
+    const boolPos = result.indexOf('"bool"');
+    const nullPos = result.indexOf('"null"');
+    const numberPos = result.indexOf('"number"');
+    const stringPos = result.indexOf('"string"');
+    expect(arrayPos).toBeLessThan(boolPos);
+    expect(boolPos).toBeLessThan(nullPos);
+    expect(nullPos).toBeLessThan(numberPos);
+    expect(numberPos).toBeLessThan(stringPos);
+  });
+
+  it("should handle empty objects", () => {
+    const json = "{}";
+    const result = sort(json);
+    expect(result).toBe("{}");
+  });
+
+  it("should handle single property objects", () => {
+    const json = '{ "only": 1 }';
+    const result = sort(json);
+    expect(result).toBe('{ "only": 1 }');
+  });
+
+  it("should preserve values correctly", () => {
+    const json = `{
+  "z": { "nested": true },
+  "a": [1, 2, 3]
+}`;
+    const result = sort(json);
+    expect(get(result, ["a"])).toEqual([1, 2, 3]);
+    expect(get(result, ["z", "nested"])).toBe(true);
+  });
+
+  it("should preserve trailing commas in multi-line objects", () => {
+    const json = `{
+  "z": 1,
+  "a": 2,
+}`;
+    const result = sort(json);
+    expect(result).toBe(`{
+  "a": 2,
+  "z": 1,
+}`);
+  });
+
+  it("should not add trailing commas when original has none", () => {
+    const json = `{
+  "z": 1,
+  "a": 2
+}`;
+    const result = sort(json);
+    expect(result).toBe(`{
+  "a": 2,
+  "z": 1
+}`);
+  });
+
+  it("should preserve trailing commas in single-line objects", () => {
+    const json = '{ "z": 1, "a": 2, }';
+    const result = sort(json);
+    expect(result).toBe('{ "a": 2, "z": 1, }');
+  });
+
+  it("should sort at a specific path", () => {
+    const json = `{
+  "keep": "unsorted",
+  "nested": {
+    "z": 1,
+    "a": 2
+  }
+}`;
+    const result = sort(json, ["nested"]);
+    // Root should be unchanged
+    expect(result.indexOf('"keep"')).toBeLessThan(result.indexOf('"nested"'));
+    // Nested should be sorted
+    const nestedStart = result.indexOf('"nested"');
+    const nestedContent = result.slice(nestedStart);
+    expect(nestedContent.indexOf('"a"')).toBeLessThan(
+      nestedContent.indexOf('"z"')
+    );
+  });
+
+  it("should sort deeply within a path", () => {
+    const json = `{
+  "config": {
+    "z": {
+      "z": 1,
+      "a": 2
+    },
+    "a": 3
+  }
+}`;
+    const result = sort(json, ["config"]);
+    // config should have a before z
+    const configStart = result.indexOf('"config"');
+    const configContent = result.slice(configStart);
+    expect(configContent.indexOf('"a": 3')).toBeLessThan(
+      configContent.indexOf('"z":')
+    );
+    // nested object inside z should also be sorted (deep=true by default)
+    expect(get(result, ["config", "z", "a"])).toBe(2);
+  });
+
+  it("should only sort at path with deep=false", () => {
+    const json = `{
+  "outer": {
+    "z": {
+      "z": 1,
+      "a": 2
+    },
+    "a": 3
+  }
+}`;
+    const result = sort(json, ["outer"], { deep: false });
+    // outer should be sorted (a before z)
+    const outerContent = result.slice(result.indexOf('"outer"'));
+    expect(outerContent.indexOf('"a": 3')).toBeLessThan(
+      outerContent.indexOf('"z":')
+    );
+    // Inner z object should NOT be sorted (z should still be before a)
+    const innerZ = result.slice(result.indexOf('"z": {'));
+    expect(innerZ.indexOf('"z": 1')).toBeLessThan(innerZ.indexOf('"a": 2'));
+  });
+
+  it("should return unchanged if path does not exist", () => {
+    const json = '{ "a": 1 }';
+    const result = sort(json, ["nonexistent"]);
+    expect(result).toBe(json);
+  });
+
+  it("should return unchanged if path is not an object", () => {
+    const json = '{ "a": [3, 1, 2] }';
+    const result = sort(json, ["a"]);
     expect(result).toBe(json);
   });
 });
