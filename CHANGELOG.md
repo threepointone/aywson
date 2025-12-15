@@ -1,5 +1,11 @@
 # aywson
 
+## 0.0.13
+
+### Patch Changes
+
+- [`ca0f382`](https://github.com/threepointone/aywson/commit/ca0f3821145a5a8afe8d52453bdf59fa1b48eec4) Thanks [@threepointone](https://github.com/threepointone)! - Update feature comparison table in README
+
 ## 0.0.12
 
 ### Patch Changes
