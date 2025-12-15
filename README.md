@@ -14,17 +14,20 @@ npm install aywson
 
 ```ts
 import {
+  parse, // parse JSONC to object
   modify, // replace fields, delete unlisted
   get, // read value at path
-  set, // write value at path
+  set, // write value at path (with optional comment)
   remove, // delete field at path
   merge, // update fields, keep unlisted
   replace, // alias for modify
   patch, // alias for merge
   rename, // rename a key
   move, // move field to new path
+  getComment, // read comment above field
   setComment, // add comment above field
-  removeComment // remove comment above field
+  removeComment, // remove comment above field
+  sort // sort object keys
 } from "aywson";
 ```
 
@@ -40,6 +43,28 @@ modify('{ /* keep this */ "a": 1, "b": 2 }', { a: 10 });
 ```
 
 `modify` uses **replace semantics** — fields not in `changes` are deleted. Comments above deleted fields are also deleted, unless they start with `**`.
+
+## `parse`
+
+Parse a JSONC string into a JavaScript value. Unlike `JSON.parse()`, this handles comments and trailing commas.
+
+```ts
+import { parse } from "aywson";
+
+parse(`{
+  // database config
+  "host": "localhost",
+  "port": 5432,
+}`);
+// → { host: "localhost", port: 5432 }
+
+// With TypeScript generics
+interface Config {
+  host: string;
+  port: number;
+}
+const config = parse<Config>(jsonString);
+```
 
 ## Path-based Operations
 
@@ -61,13 +86,17 @@ has('{ "foo": "bar" }', ["foo"]); // → true
 has('{ "foo": "bar" }', ["baz"]); // → false
 ```
 
-### `set(json, path, value)`
+### `set(json, path, value, comment?)`
 
-Set a value at a path.
+Set a value at a path, optionally with a comment.
 
 ```ts
 set('{ "foo": "bar" }', ["foo"], "baz");
 // → '{ "foo": "baz" }'
+
+// With a comment
+set('{ "foo": "bar" }', ["foo"], "baz", "this is foo");
+// → adds "// this is foo" above the field
 ```
 
 ### `remove(json, path)`
@@ -139,6 +168,44 @@ move(
 // → '{ "source": {}, "target": { "value": 123 } }'
 ```
 
+## Sort Operations
+
+### `sort(json, path?, options?)`
+
+Sort object keys alphabetically while preserving comments with their respective keys.
+
+```ts
+sort(`{
+  // z comment
+  "z": 1,
+  // a comment
+  "a": 2
+}`);
+// → '{ "a": 2, "z": 1 }' with comments preserved
+```
+
+**Path:** Specify a path to sort only a nested object (defaults to `[]` for root).
+
+```ts
+sort(json, ["config", "database"]); // Sort only the database object
+```
+
+**Options:**
+
+- `comparator?: (a: string, b: string) => number` — Custom sort function. Defaults to alphabetical.
+- `deep?: boolean` — Sort nested objects recursively. Defaults to `true`.
+
+```ts
+// Custom sort order (reverse alphabetical)
+sort(json, [], { comparator: (a, b) => b.localeCompare(a) });
+
+// Only sort top-level keys (not nested objects)
+sort(json, [], { deep: false });
+
+// Sort only a specific nested object, non-recursively
+sort(json, ["config"], { deep: false });
+```
+
 ## Comment Operations
 
 ### `setComment(json, path, comment)`
@@ -171,6 +238,24 @@ removeComment(
 // → '{ "foo": "bar" }'
 ```
 
+### `getComment(json, path)`
+
+Get the comment above a field.
+
+```ts
+getComment(
+  `{
+  // this is foo
+  "foo": "bar"
+}`,
+  ["foo"]
+);
+// → "this is foo"
+
+getComment('{ "foo": "bar" }', ["foo"]);
+// → null (no comment)
+```
+
 ## Preserving Comments
 
 When deleting fields, comments are deleted by default. Start a comment with `**` to preserve it:
@@ -198,6 +283,9 @@ remove(
 ## CLI
 
 ```bash
+# Parse JSONC to JSON (strips comments, handles trailing commas)
+aywson parse config.jsonc
+
 # Read a value
 aywson get config.json database.host
 
@@ -216,7 +304,19 @@ aywson merge config.json '{"newField": true}'
 # Remove a field
 aywson remove config.json database.debug
 
-# Add a comment above a field
+# Sort object keys alphabetically
+aywson sort config.json
+
+# Sort only a specific nested object
+aywson sort config.json dependencies
+
+# Sort without recursing into nested objects
+aywson sort config.json --no-deep
+
+# Get a comment above a field
+aywson comment config.json database.host
+
+# Set a comment above a field
 aywson comment config.json database.host "production database"
 
 # Remove a comment

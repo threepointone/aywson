@@ -278,6 +278,22 @@ function computeDeletions(
 }
 
 // =============================================================================
+// Parse Operations
+// =============================================================================
+
+/**
+ * Parse a JSONC string into a JavaScript value.
+ * Unlike JSON.parse(), this handles comments and trailing commas.
+ */
+export function parse<T = unknown>(json: string): T {
+  const tree = parseTree(json);
+  if (!tree) {
+    throw new SyntaxError("Failed to parse JSON");
+  }
+  return getNodeValue(tree) as T;
+}
+
+// =============================================================================
 // Path-based Operations
 // =============================================================================
 
@@ -306,11 +322,36 @@ export function has(json: string, path: JSONPath): boolean {
 }
 
 /**
- * Set a value at a path in the JSON
+ * Get the comment above a field at a path
  */
-export function set(json: string, path: JSONPath, value: unknown): string {
+export function getComment(json: string, path: JSONPath): string | null {
+  const found = findProperty(json, path);
+  if (!found) return null;
+
+  const { propertyNode } = found;
+  const comment = findCommentAbove(json, propertyNode.offset);
+
+  return comment ? comment.content : null;
+}
+
+/**
+ * Set a value at a path in the JSON, optionally with a comment
+ */
+export function set(
+  json: string,
+  path: JSONPath,
+  value: unknown,
+  comment?: string
+): string {
   const edits = jsoncModify(json, path, value, {});
-  return applyEdits(json, edits);
+  let result = applyEdits(json, edits);
+
+  // Add comment if provided
+  if (comment !== undefined) {
+    result = setComment(result, path, comment);
+  }
+
+  return result;
 }
 
 /**
@@ -595,6 +636,378 @@ export function removeComment(json: string, path: JSONPath): string {
   }
 
   return json.slice(0, commentLineStart) + json.slice(commentLineEnd);
+}
+
+// =============================================================================
+// Sort Operations
+// =============================================================================
+
+export interface SortOptions {
+  /**
+   * Custom comparator for sorting keys. Defaults to alphabetical.
+   */
+  comparator?: (a: string, b: string) => number;
+  /**
+   * Whether to recursively sort nested objects. Defaults to true.
+   */
+  deep?: boolean;
+}
+
+interface PropertyInfo {
+  key: string;
+  keyNode: Node;
+  propertyNode: Node;
+  /** Start of the property including any associated comment */
+  fullStart: number;
+  /** End of the property (before comma/whitespace) */
+  propertyEnd: number;
+  /** The indentation used for this property */
+  indentation: string;
+}
+
+/**
+ * Extract information about all properties in an object node
+ */
+function getPropertyInfos(json: string, objectNode: Node): PropertyInfo[] {
+  if (!objectNode.children) return [];
+
+  const infos: PropertyInfo[] = [];
+
+  for (const child of objectNode.children) {
+    if (child.type !== "property" || !child.children || !child.children[0]) {
+      continue;
+    }
+
+    const keyNode = child.children[0];
+    const key = keyNode.value as string;
+
+    // Find line start for indentation
+    let lineStart = child.offset;
+    while (lineStart > 0 && json[lineStart - 1] !== "\n") {
+      lineStart--;
+    }
+    const indentation = json.slice(lineStart, child.offset);
+
+    // Check for associated comment above
+    const commentStart = findAssociatedCommentStart(json, child.offset);
+    const fullStart = commentStart !== null ? commentStart : lineStart;
+
+    infos.push({
+      key,
+      keyNode,
+      propertyNode: child,
+      fullStart,
+      propertyEnd: child.offset + child.length,
+      indentation
+    });
+  }
+
+  return infos;
+}
+
+/**
+ * Sort object keys while preserving comments
+ */
+export function sort(
+  json: string,
+  path: JSONPath = [],
+  options: SortOptions = {}
+): string {
+  const { comparator = (a, b) => a.localeCompare(b), deep = true } = options;
+
+  const tree = parseTree(json);
+  if (!tree) return json;
+
+  // Find the target node at the given path
+  const targetNode = path.length === 0 ? tree : findNodeAtLocation(tree, path);
+  if (!targetNode || targetNode.type !== "object") return json;
+
+  // Collect all objects that need sorting within the target (process deepest first)
+  const objectsToSort: Array<{ node: Node; depth: number }> = [];
+
+  function collectObjects(node: Node, depth: number): void {
+    if (node.type === "object" && node.children && node.children.length > 0) {
+      objectsToSort.push({ node, depth });
+    }
+    if (node.children) {
+      for (const child of node.children) {
+        collectObjects(child, depth + 1);
+      }
+    }
+  }
+
+  collectObjects(targetNode, 0);
+
+  // Sort deepest objects first so offsets remain valid
+  objectsToSort.sort((a, b) => b.depth - a.depth);
+
+  // If not deep, only process the target object itself
+  const objectsToProcess = deep
+    ? objectsToSort
+    : objectsToSort.filter((o) => o.depth === 0);
+
+  let result = json;
+
+  for (const { node: objectNode } of objectsToProcess) {
+    result = sortSingleObject(result, objectNode, comparator);
+    // Re-parse after each modification to get updated offsets
+    if (objectsToProcess.length > 1) {
+      const newTree = parseTree(result);
+      if (!newTree) break;
+    }
+  }
+
+  // If we processed multiple objects, we need to re-process with fresh offsets
+  // since sorting one object invalidates offsets for others
+  if (deep && objectsToSort.length > 1) {
+    // Re-parse and process again from scratch with updated positions
+    result = sortDeepAtPath(result, path, comparator);
+  }
+
+  return result;
+}
+
+/**
+ * Recursively sort all objects in the JSON starting at a path
+ */
+function sortDeepAtPath(
+  json: string,
+  path: JSONPath,
+  comparator: (a: string, b: string) => number
+): string {
+  const tree = parseTree(json);
+  if (!tree) return json;
+
+  const targetNode = path.length === 0 ? tree : findNodeAtLocation(tree, path);
+  if (!targetNode || targetNode.type !== "object") return json;
+
+  // Find the deepest object and sort it, repeat until no changes
+  let result = json;
+  let changed = true;
+
+  while (changed) {
+    changed = false;
+    const currentTree = parseTree(result);
+    if (!currentTree) break;
+
+    const currentTarget =
+      path.length === 0 ? currentTree : findNodeAtLocation(currentTree, path);
+    if (!currentTarget) break;
+
+    // Find deepest object within target
+    let deepestObject: Node | null = null;
+    let maxDepth = -1;
+
+    function findDeepest(node: Node, depth: number): void {
+      if (node.type === "object" && node.children && node.children.length > 1) {
+        // Check if this object needs sorting
+        const infos = getPropertyInfos(result, node);
+        const keys = infos.map((i) => i.key);
+        const sortedKeys = [...keys].sort(comparator);
+        const needsSort = keys.some((k, i) => k !== sortedKeys[i]);
+
+        if (needsSort && depth > maxDepth) {
+          deepestObject = node;
+          maxDepth = depth;
+        }
+      }
+      if (node.children) {
+        for (const child of node.children) {
+          findDeepest(child, depth + 1);
+        }
+      }
+    }
+
+    findDeepest(currentTarget, 0);
+
+    if (deepestObject) {
+      result = sortSingleObject(result, deepestObject, comparator);
+      changed = true;
+    }
+  }
+
+  return result;
+}
+
+/**
+ * Sort a single object's keys
+ */
+function sortSingleObject(
+  json: string,
+  objectNode: Node,
+  comparator: (a: string, b: string) => number
+): string {
+  const infos = getPropertyInfos(json, objectNode);
+
+  if (infos.length <= 1) return json;
+
+  // Check if already sorted
+  const keys = infos.map((i) => i.key);
+  const sortedKeys = [...keys].sort(comparator);
+  if (keys.every((k, i) => k === sortedKeys[i])) {
+    return json;
+  }
+
+  // Sort the property infos
+  const sortedInfos = [...infos].sort((a, b) => comparator(a.key, b.key));
+
+  // Find the object's content boundaries (inside the braces)
+  const objectStart = objectNode.offset;
+  const objectEnd = objectNode.offset + objectNode.length;
+
+  // Find where content starts (after opening brace and any whitespace)
+  let contentStart = objectStart + 1;
+  while (
+    contentStart < objectEnd &&
+    (json[contentStart] === " " ||
+      json[contentStart] === "\t" ||
+      json[contentStart] === "\n" ||
+      json[contentStart] === "\r")
+  ) {
+    contentStart++;
+  }
+
+  // Find where content ends (before closing brace)
+  let contentEnd = objectEnd - 1;
+  while (
+    contentEnd > contentStart &&
+    (json[contentEnd - 1] === " " ||
+      json[contentEnd - 1] === "\t" ||
+      json[contentEnd - 1] === "\n" ||
+      json[contentEnd - 1] === "\r")
+  ) {
+    contentEnd--;
+  }
+
+  // Check if it's a single-line object
+  const objectContent = json.slice(objectStart, objectEnd);
+  const isSingleLine = !objectContent.includes("\n");
+
+  // Detect if original has trailing comma (check after last property)
+  const lastInfo = infos[infos.length - 1];
+  let hasTrailingComma = false;
+  if (lastInfo) {
+    let pos = lastInfo.propertyEnd;
+    while (pos < objectEnd && (json[pos] === " " || json[pos] === "\t")) {
+      pos++;
+    }
+    hasTrailingComma = pos < objectEnd && json[pos] === ",";
+  }
+
+  if (isSingleLine) {
+    // For single-line objects, rebuild simply
+    const sortedPairs = sortedInfos.map((info) => {
+      const valueNode = info.propertyNode.children?.[1];
+      const valueStr = valueNode
+        ? json.slice(valueNode.offset, valueNode.offset + valueNode.length)
+        : "null";
+      return `"${info.key}": ${valueStr}`;
+    });
+    const trailingComma = hasTrailingComma ? "," : "";
+    return (
+      json.slice(0, objectStart) +
+      "{ " +
+      sortedPairs.join(", ") +
+      trailingComma +
+      " }" +
+      json.slice(objectEnd)
+    );
+  }
+
+  // For multi-line objects, preserve formatting
+  // Extract each property with its full content (including comment)
+  const propertyTexts: string[] = [];
+
+  for (const sortedInfo of sortedInfos) {
+    // Find the original info to get proper text boundaries
+    const originalInfo = infos.find((x) => x.key === sortedInfo.key);
+    if (!originalInfo) continue;
+
+    // Determine the end boundary for this property's text
+    let textEnd = originalInfo.propertyEnd;
+
+    // Find where the text for this property ends (including trailing content but not next property)
+    // Look for comma and skip it
+    let pos = textEnd;
+    while (pos < json.length && (json[pos] === " " || json[pos] === "\t")) {
+      pos++;
+    }
+    if (pos < json.length && json[pos] === ",") {
+      pos++; // skip comma
+    }
+    // Skip trailing whitespace on the same line
+    while (pos < json.length && (json[pos] === " " || json[pos] === "\t")) {
+      pos++;
+    }
+    // Include newline if present
+    if (pos < json.length && json[pos] === "\n") {
+      textEnd = pos + 1;
+    } else if (pos < json.length && json[pos] === "\r") {
+      textEnd = pos + 1;
+      if (textEnd < json.length && json[textEnd] === "\n") {
+        textEnd++;
+      }
+    } else {
+      textEnd = pos;
+    }
+
+    // Get the full text including comment
+    let propText = json.slice(originalInfo.fullStart, textEnd);
+
+    // If this property had a comment, we need to preserve it
+    if (originalInfo.fullStart < originalInfo.propertyNode.offset) {
+      // There's a comment before this property
+      const commentText = json.slice(
+        originalInfo.fullStart,
+        originalInfo.propertyNode.offset
+      );
+
+      // Get just the property part
+      const propOnlyText = json.slice(
+        originalInfo.propertyNode.offset,
+        originalInfo.propertyEnd
+      );
+
+      // Reconstruct with consistent indentation
+      propText = commentText + propOnlyText;
+    } else {
+      // No comment, just the property
+      propText =
+        sortedInfo.indentation +
+        json.slice(originalInfo.propertyNode.offset, originalInfo.propertyEnd);
+    }
+
+    // Remove any trailing comma from the property text
+    propText = propText.replace(/,\s*$/, "");
+
+    propertyTexts.push(propText);
+  }
+
+  // Find closing brace indentation
+  const closingBracePos = objectEnd - 1;
+  let closingIndentStart = closingBracePos;
+  while (closingIndentStart > 0 && json[closingIndentStart - 1] !== "\n") {
+    closingIndentStart--;
+  }
+  const closingIndent = json.slice(closingIndentStart, closingBracePos);
+
+  // Build the new object content
+  const newContent = propertyTexts
+    .map((text, i) => {
+      // Add comma except for last item (unless trailing comma is preserved)
+      const isLast = i === propertyTexts.length - 1;
+      if (isLast) {
+        return hasTrailingComma ? `${text},` : text;
+      }
+      return `${text},`;
+    })
+    .join("\n");
+
+  // Reconstruct the object
+  const beforeObject = json.slice(0, objectStart);
+  const afterObject = json.slice(objectEnd);
+
+  return `${beforeObject}{\n${newContent}\n${closingIndent}}${afterObject}`;
 }
 
 // =============================================================================
