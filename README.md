@@ -587,15 +587,15 @@ Path syntax uses dot-notation: `config.database.host` or bracket notation for in
 
 ### Feature Set
 
-| Category              | aywson                                            | comment-json                         |
-| --------------------- | ------------------------------------------------- | ------------------------------------ |
-| **Core**              | `parse()`                                         | `parse()`, `stringify()`, `assign()` |
-| **Path operations**   | `get()`, `has()`, `set()`, `remove()`             | Object/array access                  |
-| **Bulk updates**      | `merge()`, `modify()`                             | `assign()`                           |
-| **Key manipulation**  | `rename()`, `move()`, `sort()`                    | ❌                                   |
-| **Comment API**       | `getComment()`, `setComment()`, `removeComment()` | Symbol-based access                  |
-| **Comment positions** | Above field                                       | Many (before, after, inline, etc.)   |
-| **Extras**            | CLI, `**` prefix to preserve comments             | `CommentArray` for array operations  |
+| Category              | aywson                                                       | comment-json                         |
+| --------------------- | ------------------------------------------------------------ | ------------------------------------ |
+| **Core**              | `parse()`                                                    | `parse()`, `stringify()`, `assign()` |
+| **Path operations**   | `get()`, `has()`, `set()`, `remove()`                        | Object/array access                  |
+| **Bulk updates**      | `merge()`, `modify()`                                        | `assign()`                           |
+| **Key manipulation**  | `rename()`, `move()`, `sort()`                               | ❌                                   |
+| **Comment API**       | `getComment()`, `setComment()`, `getTrailingComment()`, etc. | Symbol-based access                  |
+| **Comment positions** | Above field and trailing (same line)                         | Many (before, after, inline, etc.)   |
+| **Extras**            | CLI, `**` prefix to preserve comments                        | `CommentArray` for array operations  |
 
 ### When to use aywson
 
