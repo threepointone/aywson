@@ -24,9 +24,12 @@ import {
   patch, // alias for merge
   rename, // rename a key
   move, // move field to new path
-  getComment, // read comment above field
+  getComment, // read comment (above or trailing)
   setComment, // add comment above field
   removeComment, // remove comment above field
+  getTrailingComment, // read trailing comment
+  setTrailingComment, // add trailing comment
+  removeTrailingComment, // remove trailing comment
   sort // sort object keys
 } from "aywson";
 ```
@@ -42,7 +45,7 @@ modify('{ /* keep this */ "a": 1, "b": 2 }', { a: 10 });
 // → '{ /* keep this */ "a": 10 }' — comment preserved, b deleted
 ```
 
-`modify` uses **replace semantics** — fields not in `changes` are deleted. Comments above deleted fields are also deleted, unless they start with `**`.
+`modify` uses **replace semantics** — fields not in `changes` are deleted. Comments (both above and trailing) on deleted fields are also deleted, unless they start with `**`.
 
 ## `parse`
 
@@ -101,7 +104,7 @@ set('{ "foo": "bar" }', ["foo"], "baz", "this is foo");
 
 ### `remove(json, path)`
 
-Remove a field. Comments above the field are also removed, unless they start with `**`.
+Remove a field. Comments (both above and trailing) are also removed, unless they start with `**`.
 
 ```ts
 remove(
@@ -113,6 +116,15 @@ remove(
   ["foo"]
 );
 // → '{ "baz": 123 }' — comment removed too
+
+remove(
+  `{
+  "foo": "bar", // trailing comment
+  "baz": 123
+}`,
+  ["foo"]
+);
+// → '{ "baz": 123 }' — trailing comment removed too
 ```
 
 ## Merge Strategies
@@ -172,7 +184,7 @@ move(
 
 ### `sort(json, path?, options?)`
 
-Sort object keys alphabetically while preserving comments with their respective keys.
+Sort object keys alphabetically while preserving comments (both above and trailing) with their respective keys.
 
 ```ts
 sort(`{
@@ -182,6 +194,13 @@ sort(`{
   "a": 2
 }`);
 // → '{ "a": 2, "z": 1 }' with comments preserved
+
+// Trailing comments are also preserved
+sort(`{
+  "z": 1, // z trailing
+  "a": 2 // a trailing
+}`);
+// → '{ "a": 2 // a trailing, "z": 1 // z trailing }'
 ```
 
 **Path:** Specify a path to sort only a nested object (defaults to `[]` for root).
@@ -240,7 +259,7 @@ removeComment(
 
 ### `getComment(json, path)`
 
-Get the comment above a field.
+Get the comment associated with a field. First checks for a comment above, then falls back to a trailing comment.
 
 ```ts
 getComment(
@@ -252,8 +271,107 @@ getComment(
 );
 // → "this is foo"
 
+getComment(
+  `{
+  "foo": "bar" // trailing comment
+}`,
+  ["foo"]
+);
+// → "trailing comment"
+
 getComment('{ "foo": "bar" }', ["foo"]);
 // → null (no comment)
+```
+
+## Trailing Comments
+
+Trailing comments are comments on the same line after a field value:
+
+```jsonc
+{
+  "foo": "bar", // this is a trailing comment
+  "baz": 123 // another trailing comment
+}
+```
+
+### `getTrailingComment(json, path)`
+
+Get the trailing comment after a field (explicitly, ignoring comments above).
+
+```ts
+getTrailingComment(
+  `{
+  "foo": "bar", // trailing comment
+  "baz": 123
+}`,
+  ["foo"]
+);
+// → "trailing comment"
+```
+
+### `setTrailingComment(json, path, comment)`
+
+Add or update a trailing comment after a field.
+
+```ts
+setTrailingComment(
+  `{
+  "foo": "bar",
+  "baz": 123
+}`,
+  ["foo"],
+  "this is foo"
+);
+// → '{ "foo": "bar" // this is foo, "baz": 123 }'
+
+// Update existing trailing comment
+setTrailingComment(
+  `{
+  "foo": "bar", // old comment
+  "baz": 123
+}`,
+  ["foo"],
+  "new comment"
+);
+// → replaces "old comment" with "new comment"
+```
+
+### `removeTrailingComment(json, path)`
+
+Remove the trailing comment after a field.
+
+```ts
+removeTrailingComment(
+  `{
+  "foo": "bar", // this will be removed
+  "baz": 123
+}`,
+  ["foo"]
+);
+// → '{ "foo": "bar", "baz": 123 }'
+```
+
+### Comments Above vs Trailing
+
+You can have both a comment above and a trailing comment:
+
+```ts
+const json = `{
+  // comment above
+  "foo": "bar", // trailing comment
+  "baz": 123
+}`;
+
+getComment(json, ["foo"]); // → "comment above" (prefers above)
+getTrailingComment(json, ["foo"]); // → "trailing comment"
+
+// Set comment above (preserves trailing)
+setComment(json, ["foo"], "new above");
+// → both comments preserved, above is updated
+
+// Remove comment above (preserves trailing)
+removeComment(json, ["foo"]);
+// → trailing comment still there
 ```
 
 ## Preserving Comments
@@ -431,14 +549,23 @@ aywson sort config.json dependencies
 # Sort without recursing into nested objects
 aywson sort config.json --no-deep
 
-# Get a comment above a field
+# Get a comment (above, or trailing as fallback)
 aywson comment config.json database.host
 
 # Set a comment above a field
 aywson comment config.json database.host "production database"
 
-# Remove a comment
+# Remove a comment above a field
 aywson uncomment config.json database.host
+
+# Get a trailing comment explicitly
+aywson comment --trailing config.json database.port
+
+# Set a trailing comment
+aywson comment --trailing config.json database.port "default: 5432"
+
+# Remove a trailing comment
+aywson uncomment --trailing config.json database.port
 ```
 
 Mutating commands always show a colored diff. Use `--dry-run` (`-n`) to preview without writing.
@@ -451,24 +578,24 @@ Path syntax uses dot-notation: `config.database.host` or bracket notation for in
 
 ### Architecture
 
-| Aspect | aywson | comment-json |
-|--------|--------|--------------|
-| **Approach** | String-in, string-out | Parse to object, modify, stringify |
-| **Formatting** | Preserves original formatting exactly | Re-stringifies (may change formatting) |
-| **Mutations** | Immutable (returns new string) | Mutable (modifies object in place) |
-| **Comment storage** | Stays in the string | Symbol properties on object |
+| Aspect              | aywson                                | comment-json                           |
+| ------------------- | ------------------------------------- | -------------------------------------- |
+| **Approach**        | String-in, string-out                 | Parse to object, modify, stringify     |
+| **Formatting**      | Preserves original formatting exactly | Re-stringifies (may change formatting) |
+| **Mutations**       | Immutable (returns new string)        | Mutable (modifies object in place)     |
+| **Comment storage** | Stays in the string                   | Symbol properties on object            |
 
 ### Feature Set
 
-| Category | aywson | comment-json |
-|----------|--------|--------------|
-| **Core** | `parse()` | `parse()`, `stringify()`, `assign()` |
-| **Path operations** | `get()`, `has()`, `set()`, `remove()` | Object/array access |
-| **Bulk updates** | `merge()`, `modify()` | `assign()` |
-| **Key manipulation** | `rename()`, `move()`, `sort()` | ❌ |
-| **Comment API** | `getComment()`, `setComment()`, `removeComment()` | Symbol-based access |
-| **Comment positions** | Above field | Many (before, after, inline, etc.) |
-| **Extras** | CLI, `**` prefix to preserve comments | `CommentArray` for array operations |
+| Category              | aywson                                            | comment-json                         |
+| --------------------- | ------------------------------------------------- | ------------------------------------ |
+| **Core**              | `parse()`                                         | `parse()`, `stringify()`, `assign()` |
+| **Path operations**   | `get()`, `has()`, `set()`, `remove()`             | Object/array access                  |
+| **Bulk updates**      | `merge()`, `modify()`                             | `assign()`                           |
+| **Key manipulation**  | `rename()`, `move()`, `sort()`                    | ❌                                   |
+| **Comment API**       | `getComment()`, `setComment()`, `removeComment()` | Symbol-based access                  |
+| **Comment positions** | Above field                                       | Many (before, after, inline, etc.)   |
+| **Extras**            | CLI, `**` prefix to preserve comments             | `CommentArray` for array operations  |
 
 ### When to use aywson
 
@@ -489,7 +616,7 @@ Path syntax uses dot-notation: `config.database.host` or bracket notation for in
 **comment-json:**
 
 ```js
-const { parse, stringify, assign } = require('comment-json');
+const { parse, stringify, assign } = require("comment-json");
 
 const obj = parse(jsonString);
 obj.database.port = 5433;
@@ -500,9 +627,9 @@ const result = stringify(obj, null, 2);
 **aywson:**
 
 ```js
-import { set, merge } from 'aywson';
+import { set, merge } from "aywson";
 
-let result = set(jsonString, ['database', 'port'], 5433);
+let result = set(jsonString, ["database", "port"], 5433);
 result = merge(result, { database: { ssl: true } });
 // Original formatting preserved exactly
 ```

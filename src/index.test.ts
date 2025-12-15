@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   get,
   getComment,
+  getTrailingComment,
   has,
   merge,
   modify,
@@ -10,10 +11,12 @@ import {
   patch,
   remove,
   removeComment,
+  removeTrailingComment,
   rename,
   replace,
   set,
   setComment,
+  setTrailingComment,
   sort
 } from "./index";
 
@@ -1052,5 +1055,437 @@ describe("sort", () => {
     const json = '{ "a": [3, 1, 2] }';
     const result = sort(json, ["a"]);
     expect(result).toBe(json);
+  });
+});
+
+describe("trailing comments", () => {
+  describe("getTrailingComment", () => {
+    it("should get a line comment after a field", () => {
+      const json = `{
+  "foo": "bar", // this is foo
+  "baz": 123
+}`;
+      expect(getTrailingComment(json, ["foo"])).toBe("this is foo");
+    });
+
+    it("should get a block comment after a field", () => {
+      const json = `{
+  "foo": "bar", /* block comment */
+  "baz": 123
+}`;
+      expect(getTrailingComment(json, ["foo"])).toBe("block comment");
+    });
+
+    it("should return null if no trailing comment exists", () => {
+      const json = `{
+  "foo": "bar",
+  "baz": 123
+}`;
+      expect(getTrailingComment(json, ["foo"])).toBeNull();
+    });
+
+    it("should return null for non-existent path", () => {
+      const json = '{ "foo": "bar" }';
+      expect(getTrailingComment(json, ["nonexistent"])).toBeNull();
+    });
+
+    it("should get trailing comment from nested field", () => {
+      const json = `{
+  "config": {
+    "enabled": true // is it enabled?
+  }
+}`;
+      expect(getTrailingComment(json, ["config", "enabled"])).toBe(
+        "is it enabled?"
+      );
+    });
+
+    it("should get trailing comment on last property (no comma)", () => {
+      const json = `{
+  "foo": "bar" // trailing on last
+}`;
+      expect(getTrailingComment(json, ["foo"])).toBe("trailing on last");
+    });
+  });
+
+  describe("getComment with trailing comments", () => {
+    it("should fall back to trailing comment if no comment above", () => {
+      const json = `{
+  "foo": "bar", // trailing comment
+  "baz": 123
+}`;
+      expect(getComment(json, ["foo"])).toBe("trailing comment");
+    });
+
+    it("should prefer comment above over trailing comment", () => {
+      const json = `{
+  // comment above
+  "foo": "bar", // trailing comment
+  "baz": 123
+}`;
+      expect(getComment(json, ["foo"])).toBe("comment above");
+    });
+  });
+
+  describe("setTrailingComment", () => {
+    it("should add a trailing comment after a field", () => {
+      const json = `{
+  "foo": "bar",
+  "baz": 123
+}`;
+      const result = setTrailingComment(json, ["foo"], "this is foo");
+      expect(result).toContain('"foo": "bar" // this is foo,');
+    });
+
+    it("should update an existing trailing comment", () => {
+      const json = `{
+  "foo": "bar", // old comment
+  "baz": 123
+}`;
+      const result = setTrailingComment(json, ["foo"], "new comment");
+      expect(result).toContain("// new comment");
+      expect(result).not.toContain("old comment");
+    });
+
+    it("should work with nested fields", () => {
+      const json = `{
+  "config": {
+    "enabled": true,
+    "count": 5
+  }
+}`;
+      const result = setTrailingComment(
+        json,
+        ["config", "enabled"],
+        "is it on?"
+      );
+      expect(result).toContain('"enabled": true // is it on?');
+    });
+
+    it("should add trailing comment on last property (no comma)", () => {
+      const json = `{
+  "foo": "bar"
+}`;
+      const result = setTrailingComment(json, ["foo"], "the only one");
+      expect(result).toContain('"foo": "bar" // the only one');
+    });
+  });
+
+  describe("removeTrailingComment", () => {
+    it("should remove a trailing comment after a field", () => {
+      const json = `{
+  "foo": "bar", // this is a comment
+  "baz": 123
+}`;
+      const result = removeTrailingComment(json, ["foo"]);
+      expect(result).not.toContain("// this is a comment");
+      expect(result).toContain('"foo": "bar",');
+    });
+
+    it("should handle block comments", () => {
+      const json = `{
+  "foo": "bar", /* block comment */
+  "baz": 123
+}`;
+      const result = removeTrailingComment(json, ["foo"]);
+      expect(result).not.toContain("block comment");
+      expect(result).toContain('"foo": "bar",');
+    });
+
+    it("should do nothing if no trailing comment exists", () => {
+      const json = `{
+  "foo": "bar",
+  "baz": 123
+}`;
+      const result = removeTrailingComment(json, ["foo"]);
+      expect(result).toBe(json);
+    });
+  });
+
+  describe("remove with trailing comments", () => {
+    it("should remove a field with its trailing comment", () => {
+      const json = `{
+  "foo": "bar", // this is foo
+  "baz": 123
+}`;
+      const result = remove(json, ["foo"]);
+      expect(result).toBe(`{
+  "baz": 123
+}`);
+    });
+
+    it("should preserve trailing comment starting with **", () => {
+      const json = `{
+  "foo": "bar", // ** important note
+  "baz": 123
+}`;
+      const result = remove(json, ["foo"]);
+      expect(result).toContain("// ** important note");
+    });
+
+    it("should remove field with both above and trailing comment", () => {
+      const json = `{
+  // comment above
+  "foo": "bar", // trailing comment
+  "baz": 123
+}`;
+      const result = remove(json, ["foo"]);
+      expect(result).toBe(`{
+  "baz": 123
+}`);
+    });
+  });
+
+  describe("sort with trailing comments", () => {
+    it("should preserve trailing comments when sorting", () => {
+      const json = `{
+  "z": 1, // z comment
+  "a": 2 // a comment
+}`;
+      const result = sort(json);
+      expect(result).toContain('"a": 2 // a comment');
+      expect(result).toContain('"z": 1 // z comment');
+      // a should come before z
+      const aPos = result.indexOf('"a"');
+      const zPos = result.indexOf('"z"');
+      expect(aPos).toBeLessThan(zPos);
+    });
+
+    it("should preserve both above and trailing comments when sorting", () => {
+      const json = `{
+  // z above
+  "z": 1, // z trailing
+  // a above
+  "a": 2 // a trailing
+}`;
+      const result = sort(json);
+      expect(result).toContain("// a above");
+      expect(result).toContain("// a trailing");
+      expect(result).toContain("// z above");
+      expect(result).toContain("// z trailing");
+    });
+
+    it("should handle single-line objects with trailing comments", () => {
+      const json = '{ "z": 1 /* z */, "a": 2 /* a */ }';
+      const result = sort(json);
+      expect(result).toContain('"a": 2 // a');
+      expect(result).toContain('"z": 1 // z');
+    });
+  });
+
+  describe("modify with trailing comments", () => {
+    it("should preserve trailing comments when modifying values", () => {
+      const json = `{
+  "foo": "bar", // important field
+  "baz": 123
+}`;
+      const result = modify(json, { foo: "updated", baz: 123 });
+      expect(result).toContain('"foo": "updated"');
+      expect(result).toContain("// important field");
+    });
+
+    it("should delete trailing comment with field when using modify", () => {
+      const json = `{
+  "foo": "bar", // will be deleted
+  "baz": 123
+}`;
+      const result = modify(json, { baz: 123 });
+      expect(result).not.toContain("will be deleted");
+      expect(result).toBe(`{
+  "baz": 123
+}`);
+    });
+  });
+
+  describe("set with trailing comments", () => {
+    it("should preserve trailing comments when setting a value", () => {
+      const json = `{
+  "foo": "bar", // trailing comment
+  "baz": 123
+}`;
+      const result = set(json, ["foo"], "updated");
+      expect(result).toContain('"foo": "updated"');
+      expect(result).toContain("// trailing comment");
+    });
+
+    it("should preserve trailing comment on other fields when setting", () => {
+      const json = `{
+  "foo": "bar",
+  "baz": 123 // baz comment
+}`;
+      const result = set(json, ["foo"], "updated");
+      expect(result).toContain('"foo": "updated"');
+      expect(result).toContain("// baz comment");
+    });
+
+    it("should preserve trailing comments when adding a new field", () => {
+      const json = `{
+  "foo": "bar" // trailing comment
+}`;
+      const result = set(json, ["baz"], 123);
+      expect(result).toContain("// trailing comment");
+      expect(result).toContain('"baz": 123');
+    });
+
+    it("should preserve trailing comments in nested objects", () => {
+      const json = `{
+  "config": {
+    "enabled": true, // is enabled
+    "count": 5
+  }
+}`;
+      const result = set(json, ["config", "count"], 10);
+      expect(result).toContain('"count": 10');
+      expect(result).toContain("// is enabled");
+    });
+  });
+
+  describe("merge with trailing comments", () => {
+    it("should preserve trailing comments when merging", () => {
+      const json = `{
+  "foo": "bar", // foo comment
+  "baz": 123 // baz comment
+}`;
+      const result = merge(json, { foo: "updated" });
+      expect(result).toContain('"foo": "updated"');
+      expect(result).toContain("// foo comment");
+      expect(result).toContain("// baz comment");
+    });
+
+    it("should preserve trailing comments when adding via merge", () => {
+      const json = `{
+  "foo": "bar" // existing comment
+}`;
+      const result = merge(json, { baz: 123 });
+      expect(result).toContain("// existing comment");
+      expect(result).toContain('"baz": 123');
+    });
+
+    it("should delete trailing comment when field is deleted via undefined", () => {
+      const json = `{
+  "foo": "bar", // will be deleted
+  "baz": 123
+}`;
+      const result = merge(json, { foo: undefined });
+      expect(result).not.toContain("will be deleted");
+      expect(result).toContain('"baz": 123');
+    });
+  });
+
+  describe("replace with trailing comments", () => {
+    it("should preserve trailing comments on kept fields", () => {
+      const json = `{
+  "foo": "bar", // foo comment
+  "baz": 123 // baz comment
+}`;
+      const result = replace(json, { baz: 456 });
+      expect(result).not.toContain("foo comment");
+      expect(result).toContain("// baz comment");
+      expect(result).toContain('"baz": 456');
+    });
+
+    it("should delete trailing comments on removed fields", () => {
+      const json = `{
+  "foo": "bar", // will be gone
+  "baz": 123
+}`;
+      const result = replace(json, { baz: 123 });
+      expect(result).not.toContain("will be gone");
+    });
+  });
+
+  describe("patch with trailing comments", () => {
+    it("should preserve trailing comments when patching", () => {
+      const json = `{
+  "foo": "bar", // foo comment
+  "baz": 123 // baz comment
+}`;
+      const result = patch(json, { foo: "patched" });
+      expect(result).toContain('"foo": "patched"');
+      expect(result).toContain("// foo comment");
+      expect(result).toContain("// baz comment");
+    });
+
+    it("should delete trailing comment when field removed via patch", () => {
+      const json = `{
+  "foo": "bar", // foo comment
+  "baz": 123
+}`;
+      const result = patch(json, { foo: undefined });
+      expect(result).not.toContain("foo comment");
+    });
+  });
+
+  describe("rename with trailing comments", () => {
+    it("should preserve trailing comments on other fields when renaming", () => {
+      const json = `{
+  "foo": "bar",
+  "baz": 123 // baz comment
+}`;
+      const result = rename(json, ["foo"], "renamed");
+      expect(result).toContain('"renamed"');
+      expect(result).toContain("// baz comment");
+    });
+  });
+
+  describe("move with trailing comments", () => {
+    it("should preserve trailing comments on other fields when moving", () => {
+      const json = `{
+  "source": {
+    "value": 123
+  },
+  "target": {} // target comment
+}`;
+      const result = move(json, ["source", "value"], ["target", "value"]);
+      expect(result).toContain("// target comment");
+    });
+
+    it("should remove trailing comment with moved field", () => {
+      const json = `{
+  "source": {
+    "value": 123 // value comment
+  },
+  "target": {}
+}`;
+      const result = move(json, ["source", "value"], ["target", "moved"]);
+      expect(result).not.toContain("value comment");
+    });
+  });
+
+  describe("setComment with trailing comments", () => {
+    it("should add comment above while preserving trailing comment", () => {
+      const json = `{
+  "foo": "bar", // trailing
+  "baz": 123
+}`;
+      const result = setComment(json, ["foo"], "comment above");
+      expect(result).toContain("// comment above");
+      expect(result).toContain("// trailing");
+    });
+
+    it("should update comment above while preserving trailing comment", () => {
+      const json = `{
+  // old above
+  "foo": "bar", // trailing
+  "baz": 123
+}`;
+      const result = setComment(json, ["foo"], "new above");
+      expect(result).toContain("// new above");
+      expect(result).not.toContain("old above");
+      expect(result).toContain("// trailing");
+    });
+  });
+
+  describe("removeComment with trailing comments", () => {
+    it("should remove comment above while preserving trailing comment", () => {
+      const json = `{
+  // comment above
+  "foo": "bar", // trailing
+  "baz": 123
+}`;
+      const result = removeComment(json, ["foo"]);
+      expect(result).not.toContain("comment above");
+      expect(result).toContain("// trailing");
+    });
   });
 });

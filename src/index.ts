@@ -206,6 +206,62 @@ function findCommentAbove(
 }
 
 /**
+ * Find any trailing comment after a property (on the same line)
+ */
+function findTrailingComment(
+  json: string,
+  propertyEnd: number
+): { start: number; end: number; content: string } | null {
+  let pos = propertyEnd;
+
+  // Skip comma if present
+  if (pos < json.length && json[pos] === ",") {
+    pos++;
+  }
+
+  // Skip whitespace (but not newlines)
+  while (pos < json.length && (json[pos] === " " || json[pos] === "\t")) {
+    pos++;
+  }
+
+  // If we hit a newline or end, no trailing comment
+  if (pos >= json.length || json[pos] === "\n" || json[pos] === "\r") {
+    return null;
+  }
+
+  // Check for line comment //
+  if (pos < json.length - 1 && json[pos] === "/" && json[pos + 1] === "/") {
+    const commentStart = pos;
+    pos += 2;
+    // Find end of line
+    while (pos < json.length && json[pos] !== "\n" && json[pos] !== "\r") {
+      pos++;
+    }
+    const content = json.slice(commentStart + 2, pos).trim();
+    return { start: commentStart, end: pos, content };
+  }
+
+  // Check for block comment /* */
+  if (pos < json.length - 1 && json[pos] === "/" && json[pos + 1] === "*") {
+    const commentStart = pos;
+    pos += 2;
+    // Find closing */
+    while (pos < json.length - 1) {
+      if (json[pos] === "*" && json[pos + 1] === "/") {
+        pos += 2;
+        const content = json.slice(commentStart + 2, pos - 2).trim();
+        return { start: commentStart, end: pos, content };
+      }
+      pos++;
+    }
+    // Unclosed block comment
+    return null;
+  }
+
+  return null;
+}
+
+/**
  * Flatten a nested changes object into individual path-value pairs
  */
 function flattenChanges(
@@ -322,16 +378,42 @@ export function has(json: string, path: JSONPath): boolean {
 }
 
 /**
- * Get the comment above a field at a path
+ * Get the comment associated with a field at a path.
+ * First checks for a comment above the field, then falls back to a trailing comment.
  */
 export function getComment(json: string, path: JSONPath): string | null {
   const found = findProperty(json, path);
   if (!found) return null;
 
   const { propertyNode } = found;
-  const comment = findCommentAbove(json, propertyNode.offset);
 
-  return comment ? comment.content : null;
+  // First check for comment above
+  const commentAbove = findCommentAbove(json, propertyNode.offset);
+  if (commentAbove) {
+    return commentAbove.content;
+  }
+
+  // Fall back to trailing comment
+  const propertyEnd = propertyNode.offset + propertyNode.length;
+  const trailingComment = findTrailingComment(json, propertyEnd);
+  return trailingComment ? trailingComment.content : null;
+}
+
+/**
+ * Get the trailing comment after a field at a path (on the same line)
+ */
+export function getTrailingComment(
+  json: string,
+  path: JSONPath
+): string | null {
+  const found = findProperty(json, path);
+  if (!found) return null;
+
+  const { propertyNode } = found;
+  const propertyEnd = propertyNode.offset + propertyNode.length;
+  const trailingComment = findTrailingComment(json, propertyEnd);
+
+  return trailingComment ? trailingComment.content : null;
 }
 
 /**
@@ -364,7 +446,7 @@ export function remove(json: string, path: JSONPath): string {
   const { propertyNode } = found;
   const { lineStart, isSingleLine } = getPropertyRange(json, propertyNode);
 
-  // Check for associated comment (comments starting with ** are preserved)
+  // Check for associated comment above (comments starting with ** are preserved)
   const commentStart = !isSingleLine
     ? findAssociatedCommentStart(json, propertyNode.offset)
     : null;
@@ -382,7 +464,17 @@ export function remove(json: string, path: JSONPath): string {
   // Find the end of the property
   let deleteEnd = propertyNode.offset + propertyNode.length;
 
-  // Skip trailing comma
+  // Check for trailing comment (unless it starts with **)
+  const propertyEnd = propertyNode.offset + propertyNode.length;
+  const trailingComment = findTrailingComment(json, propertyEnd);
+  const hasPreservedTrailingComment = trailingComment?.content.startsWith("**");
+
+  // If there's a trailing comment that should be deleted, include it in the deletion
+  if (trailingComment && !hasPreservedTrailingComment) {
+    deleteEnd = trailingComment.end;
+  }
+
+  // Skip trailing comma (if not already past it due to trailing comment)
   if (deleteEnd < json.length && json[deleteEnd] === ",") {
     deleteEnd++;
   }
@@ -610,6 +702,72 @@ export function setComment(
 }
 
 /**
+ * Set or update a trailing comment after a field (on the same line)
+ */
+export function setTrailingComment(
+  json: string,
+  path: JSONPath,
+  comment: string
+): string {
+  const found = findProperty(json, path);
+  if (!found) return json;
+
+  const { propertyNode } = found;
+  const propertyEnd = propertyNode.offset + propertyNode.length;
+
+  // Check for existing trailing comment
+  const existingComment = findTrailingComment(json, propertyEnd);
+
+  // Find where to insert the comment (after the value, before any comma)
+  const insertPos = propertyEnd;
+
+  // Check if there's a comma after the property
+  let pos = propertyEnd;
+  while (pos < json.length && (json[pos] === " " || json[pos] === "\t")) {
+    pos++;
+  }
+  const hasComma = pos < json.length && json[pos] === ",";
+
+  if (existingComment) {
+    // Replace existing trailing comment
+    return `${json.slice(0, existingComment.start)}// ${comment}${json.slice(existingComment.end)}`;
+  }
+  // Insert new trailing comment
+  // If there's a comma, insert before it; otherwise insert after value
+  if (hasComma) {
+    // Insert before the comma
+    return `${json.slice(0, pos)} // ${comment}${json.slice(pos)}`;
+  }
+  // Insert after the value
+  return `${json.slice(0, insertPos)} // ${comment}${json.slice(insertPos)}`;
+}
+
+/**
+ * Remove the trailing comment after a field
+ */
+export function removeTrailingComment(json: string, path: JSONPath): string {
+  const found = findProperty(json, path);
+  if (!found) return json;
+
+  const { propertyNode } = found;
+  const propertyEnd = propertyNode.offset + propertyNode.length;
+  const existingComment = findTrailingComment(json, propertyEnd);
+
+  if (!existingComment) return json;
+
+  // Remove the comment and any whitespace before it
+  let removeStart = existingComment.start;
+  while (
+    removeStart > propertyEnd &&
+    (json[removeStart - 1] === " " || json[removeStart - 1] === "\t")
+  ) {
+    removeStart--;
+  }
+
+  return json.slice(0, removeStart) + json.slice(existingComment.end);
+}
+
+/**
  * Remove the comment above a field
  */
 export function removeComment(json: string, path: JSONPath): string {
@@ -657,12 +815,16 @@ interface PropertyInfo {
   key: string;
   keyNode: Node;
   propertyNode: Node;
-  /** Start of the property including any associated comment */
+  /** Start of the property including any associated comment above */
   fullStart: number;
   /** End of the property (before comma/whitespace) */
   propertyEnd: number;
+  /** End of the property including any trailing comment */
+  fullEnd: number;
   /** The indentation used for this property */
   indentation: string;
+  /** Trailing comment content if any */
+  trailingComment?: { start: number; end: number; content: string };
 }
 
 /**
@@ -692,14 +854,24 @@ function getPropertyInfos(json: string, objectNode: Node): PropertyInfo[] {
     const commentStart = findAssociatedCommentStart(json, child.offset);
     const fullStart = commentStart !== null ? commentStart : lineStart;
 
-    infos.push({
+    // Check for trailing comment
+    const propertyEnd = child.offset + child.length;
+    const trailingComment = findTrailingComment(json, propertyEnd);
+    const fullEnd = trailingComment ? trailingComment.end : propertyEnd;
+
+    const info: PropertyInfo = {
       key,
       keyNode,
       propertyNode: child,
       fullStart,
-      propertyEnd: child.offset + child.length,
+      propertyEnd,
+      fullEnd,
       indentation
-    });
+    };
+    if (trailingComment) {
+      info.trailingComment = trailingComment;
+    }
+    infos.push(info);
   }
 
   return infos;
@@ -883,25 +1055,40 @@ function sortSingleObject(
   const objectContent = json.slice(objectStart, objectEnd);
   const isSingleLine = !objectContent.includes("\n");
 
-  // Detect if original has trailing comma (check after last property)
+  // Detect if original has trailing comma (check after last property, accounting for trailing comments)
   const lastInfo = infos[infos.length - 1];
   let hasTrailingComma = false;
   if (lastInfo) {
-    let pos = lastInfo.propertyEnd;
+    // Start after the property (or trailing comment if present)
+    let pos = lastInfo.fullEnd;
     while (pos < objectEnd && (json[pos] === " " || json[pos] === "\t")) {
       pos++;
     }
-    hasTrailingComma = pos < objectEnd && json[pos] === ",";
+    // Check for comma
+    if (pos < objectEnd && json[pos] === ",") {
+      hasTrailingComma = true;
+    } else {
+      // Also check if comma comes before trailing comment
+      pos = lastInfo.propertyEnd;
+      while (pos < objectEnd && (json[pos] === " " || json[pos] === "\t")) {
+        pos++;
+      }
+      hasTrailingComma = pos < objectEnd && json[pos] === ",";
+    }
   }
 
   if (isSingleLine) {
-    // For single-line objects, rebuild simply
+    // For single-line objects, rebuild simply but preserve trailing comments
     const sortedPairs = sortedInfos.map((info) => {
       const valueNode = info.propertyNode.children?.[1];
       const valueStr = valueNode
         ? json.slice(valueNode.offset, valueNode.offset + valueNode.length)
         : "null";
-      return `"${info.key}": ${valueStr}`;
+      // Include trailing comment if present
+      const trailingCommentStr = info.trailingComment
+        ? ` // ${info.trailingComment.content}`
+        : "";
+      return `"${info.key}": ${valueStr}${trailingCommentStr}`;
     });
     const trailingComma = hasTrailingComma ? "," : "";
     return (
@@ -915,7 +1102,7 @@ function sortSingleObject(
   }
 
   // For multi-line objects, preserve formatting
-  // Extract each property with its full content (including comment)
+  // Extract each property with its full content (including comments above and trailing)
   const propertyTexts: string[] = [];
 
   for (const sortedInfo of sortedInfos) {
@@ -923,38 +1110,10 @@ function sortSingleObject(
     const originalInfo = infos.find((x) => x.key === sortedInfo.key);
     if (!originalInfo) continue;
 
-    // Determine the end boundary for this property's text
-    let textEnd = originalInfo.propertyEnd;
+    // Build the property text including comment above and trailing comment
+    let propText: string;
 
-    // Find where the text for this property ends (including trailing content but not next property)
-    // Look for comma and skip it
-    let pos = textEnd;
-    while (pos < json.length && (json[pos] === " " || json[pos] === "\t")) {
-      pos++;
-    }
-    if (pos < json.length && json[pos] === ",") {
-      pos++; // skip comma
-    }
-    // Skip trailing whitespace on the same line
-    while (pos < json.length && (json[pos] === " " || json[pos] === "\t")) {
-      pos++;
-    }
-    // Include newline if present
-    if (pos < json.length && json[pos] === "\n") {
-      textEnd = pos + 1;
-    } else if (pos < json.length && json[pos] === "\r") {
-      textEnd = pos + 1;
-      if (textEnd < json.length && json[textEnd] === "\n") {
-        textEnd++;
-      }
-    } else {
-      textEnd = pos;
-    }
-
-    // Get the full text including comment
-    let propText = json.slice(originalInfo.fullStart, textEnd);
-
-    // If this property had a comment, we need to preserve it
+    // Start with comment above if present
     if (originalInfo.fullStart < originalInfo.propertyNode.offset) {
       // There's a comment before this property
       const commentText = json.slice(
@@ -962,7 +1121,7 @@ function sortSingleObject(
         originalInfo.propertyNode.offset
       );
 
-      // Get just the property part
+      // Get just the property part (without trailing comment)
       const propOnlyText = json.slice(
         originalInfo.propertyNode.offset,
         originalInfo.propertyEnd
@@ -971,14 +1130,16 @@ function sortSingleObject(
       // Reconstruct with consistent indentation
       propText = commentText + propOnlyText;
     } else {
-      // No comment, just the property
+      // No comment above, just the property with indentation
       propText =
         sortedInfo.indentation +
         json.slice(originalInfo.propertyNode.offset, originalInfo.propertyEnd);
     }
 
-    // Remove any trailing comma from the property text
-    propText = propText.replace(/,\s*$/, "");
+    // Add trailing comment if present
+    if (originalInfo.trailingComment) {
+      propText += ` // ${originalInfo.trailingComment.content}`;
+    }
 
     propertyTexts.push(propText);
   }

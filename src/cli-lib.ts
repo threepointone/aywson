@@ -3,15 +3,18 @@ import chalk from "chalk";
 import {
   get,
   getComment,
+  getTrailingComment,
   merge,
   modify,
   move,
   parse,
   remove,
   removeComment,
+  removeTrailingComment,
   rename,
   set,
   setComment,
+  setTrailingComment,
   sort
 } from "./index.js";
 
@@ -156,12 +159,13 @@ Commands:
   rename <file> <path> <newKey>       Rename a key
   move <file> <fromPath> <toPath>     Move field to new location
   sort <file> [path]                  Sort object keys alphabetically
-  comment <file> <path> [text]        Get or set comment above a field
-  uncomment <file> <path>             Remove comment above a field
+  comment <file> <path> [text]        Get or set comment for a field
+  uncomment <file> <path>             Remove comment from a field
 
 Options:
   --dry-run, -n    Show diff but don't write to file
   --no-deep        For sort: only sort specified object, not nested
+  --trailing       For comment/uncomment: use trailing comment (same line)
   --help, -h       Show this help
   --version, -v    Show version
 
@@ -177,6 +181,8 @@ Examples:
   aywson modify config.json '{"database": {"host": "prod.db.com"}}'
   aywson sort config.json
   aywson sort config.json dependencies --no-deep
+  aywson comment config.json database.host "primary host"
+  aywson comment --trailing config.json database.port "default: 5432"
 `);
 }
 
@@ -198,6 +204,7 @@ interface ParsedArgs {
   args: string[];
   dryRun: boolean;
   noDeep: boolean;
+  trailing: boolean;
 }
 
 function parseArgs(argv: string[]): ParsedArgs | null {
@@ -217,6 +224,7 @@ function parseArgs(argv: string[]): ParsedArgs | null {
   // Filter out flags
   const dryRun = args.includes("--dry-run") || args.includes("-n");
   const noDeep = args.includes("--no-deep");
+  const trailing = args.includes("--trailing");
   const positional = args.filter((a) => !a.startsWith("-") || a === "-");
 
   const command = positional[0];
@@ -228,7 +236,7 @@ function parseArgs(argv: string[]): ParsedArgs | null {
     process.exit(1);
   }
 
-  return { command, file, args: positional.slice(2), dryRun, noDeep };
+  return { command, file, args: positional.slice(2), dryRun, noDeep, trailing };
 }
 
 function readInput(file: string): string {
@@ -251,7 +259,7 @@ export function run(): void {
   const parsed = parseArgs(process.argv);
   if (!parsed) return;
 
-  const { command, file, args, dryRun, noDeep } = parsed;
+  const { command, file, args, dryRun, noDeep, trailing } = parsed;
 
   try {
     const json = readInput(file);
@@ -370,7 +378,9 @@ export function run(): void {
         const path = parsePath(pathArg);
         if (textArg === undefined) {
           // Get comment
-          const comment = getComment(json, path);
+          const comment = trailing
+            ? getTrailingComment(json, path)
+            : getComment(json, path);
           if (comment === null) {
             console.log("(no comment)");
           } else {
@@ -378,7 +388,9 @@ export function run(): void {
           }
         } else {
           // Set comment
-          const result = setComment(json, path, textArg);
+          const result = trailing
+            ? setTrailingComment(json, path, textArg)
+            : setComment(json, path, textArg);
           handleMutation(file, json, result, dryRun);
         }
         break;
@@ -391,7 +403,9 @@ export function run(): void {
           process.exit(1);
         }
         const path = parsePath(pathArg);
-        const result = removeComment(json, path);
+        const result = trailing
+          ? removeTrailingComment(json, path)
+          : removeComment(json, path);
         handleMutation(file, json, result, dryRun);
         break;
       }
