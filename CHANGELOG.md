@@ -1,5 +1,13 @@
 # aywson
 
+## 0.0.14
+
+### Patch Changes
+
+- [`2275b62`](https://github.com/threepointone/aywson/commit/2275b626834000a0698020c311070d03d3af3f5c) Thanks [@threepointone](https://github.com/threepointone)! - Add JSONC format operation to CLI and API
+
+  Introduces a new `format` function to the API and a corresponding CLI command for formatting/prettifying JSONC files. The formatter preserves comments and supports options for indentation (tab size, tabs vs spaces) and end-of-line characters. Updates documentation and adds comprehensive tests for the new formatting functionality.
+
 ## 0.0.13
 
 ### Patch Changes
