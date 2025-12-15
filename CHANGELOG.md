@@ -1,5 +1,11 @@
 # aywson
 
+## 0.0.10
+
+### Patch Changes
+
+- [`15d9777`](https://github.com/threepointone/aywson/commit/15d9777867cfeba7a4e0fa4d2d73f07c37efc936) Thanks [@threepointone](https://github.com/threepointone)! - Add advanced usage examples to README
+
 ## 0.0.9
 
 ### Patch Changes

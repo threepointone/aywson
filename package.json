@@ -1,6 +1,6 @@
 {
   "name": "aywson",
-  "version": "0.0.9",
+  "version": "0.0.10",
   "description": "Modify JSONC while preserving comments and formatting.",
   "author": "Sunil Pai <threepointone@gmail.com>",
   "license": "MIT",
