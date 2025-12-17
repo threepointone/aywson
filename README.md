@@ -73,6 +73,7 @@ const config = parse<Config>(jsonString);
 ## Path-based Operations
 
 Paths can be specified as either:
+
 - **String paths**: `"config.database.host"` or `"items[0].name"` (dot-notation, like the CLI)
 - **Array paths**: `["config", "database", "host"]` or `["items", 0, "name"]`
 
@@ -585,12 +586,7 @@ json = set(json, "database.ssl", true, "Enable SSL in production");
 
 json = set(json, "features", {}, "Feature flags");
 json = set(json, "features.darkMode", false);
-json = set(
-  json,
-  "features.beta",
-  true,
-  "Beta features - use with caution"
-);
+json = set(json, "features.beta", true, "Beta features - use with caution");
 // Note: Array paths like ["database", "host"] also work
 
 console.log(json);
