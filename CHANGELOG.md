@@ -1,5 +1,17 @@
 # aywson
 
+## 0.0.15
+
+### Patch Changes
+
+- [`e955d77`](https://github.com/threepointone/aywson/commit/e955d7732f88b2ed93305110a7c1127d52387c27) Thanks [@threepointone](https://github.com/threepointone)! - Add security options for path, file size, and JSON limits
+
+  Introduces path validation to prevent path traversal attacks, file size limits (default 50MB) with override flags, and JSON parsing limits (size and depth) configurable via environment variables. Updates CLI help, argument parsing, and documentation to reflect new security features and best practices.
+
+- [`404335e`](https://github.com/threepointone/aywson/commit/404335e45a3b4943c1064cca1e25ecd901c04bd2) Thanks [@threepointone](https://github.com/threepointone)! - Support string and array paths in all API operations
+
+  All path-based operations now accept both string (dot/bracket notation) and array formats for paths. The implementation normalizes paths internally, and the documentation and tests have been updated to reflect and verify this enhanced flexibility.
+
 ## 0.0.14
 
 ### Patch Changes
