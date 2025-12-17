@@ -1,6 +1,5 @@
 import { execSync } from "node:child_process";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { diff, parsePath } from "./cli-lib";
@@ -450,7 +449,7 @@ describe("Security features", () => {
     });
 
     it("should allow stdin (-) without path validation", () => {
-      const { stdout, exitCode } = runCli(`parse -`, undefined, undefined);
+      const { exitCode } = runCli(`parse -`, undefined, undefined);
       // stdin is allowed, but will fail because there's no input
       // The important thing is it doesn't fail with path traversal error
       expect(exitCode).toBeGreaterThanOrEqual(0);
@@ -460,7 +459,9 @@ describe("Security features", () => {
       writeFileSync(testFile, '{ "foo": "bar" }');
       // Use a path that definitely goes outside the working directory
       const outsidePath = join(process.cwd(), "..", "..", "sensitive.json");
-      const { exitCode, stderr, stdout } = runCli(`set ${outsidePath} foo '"baz"'`);
+      const { exitCode, stderr, stdout } = runCli(
+        `set ${outsidePath} foo '"baz"'`
+      );
       expect(exitCode).toBe(1);
       const errorOutput = stderr || stdout;
       expect(errorOutput).toContain("Path traversal detected");
@@ -525,7 +526,9 @@ describe("Security features", () => {
 
     it("should allow unlimited file size with --no-file-size-limit", () => {
       // Create a file larger than 50MB
-      const largeContent = JSON.stringify({ data: "x".repeat(51 * 1024 * 1024) });
+      const largeContent = JSON.stringify({
+        data: "x".repeat(51 * 1024 * 1024)
+      });
       writeFileSync(testFile, largeContent);
       const { exitCode } = runCli(`parse --no-file-size-limit ${testFile}`);
       expect(exitCode).toBe(0);
@@ -585,11 +588,9 @@ describe("Security features", () => {
       // Create JSON within the custom limit
       const json = JSON.stringify({ data: "x".repeat(5000) });
       // Set limit to 10000 bytes - should succeed
-      const { exitCode } = runCli(
-        `set ${testFile} data '${json}'`,
-        undefined,
-        { AYWSON_MAX_JSON_SIZE: "10000" }
-      );
+      const { exitCode } = runCli(`set ${testFile} data '${json}'`, undefined, {
+        AYWSON_MAX_JSON_SIZE: "10000"
+      });
       expect(exitCode).toBe(0);
     });
 

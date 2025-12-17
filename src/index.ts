@@ -980,7 +980,9 @@ export function sort(
 
   // Find the target node at the given path
   const targetNode =
-    normalizedPath.length === 0 ? tree : findNodeAtLocation(tree, normalizedPath);
+    normalizedPath.length === 0
+      ? tree
+      : findNodeAtLocation(tree, normalizedPath);
   if (!targetNode || targetNode.type !== "object") return json;
 
   // Collect all objects that need sorting within the target (process deepest first)
