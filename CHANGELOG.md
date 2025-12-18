@@ -1,5 +1,11 @@
 # aywson
 
+## 0.0.16
+
+### Patch Changes
+
+- [`ecb789c`](https://github.com/threepointone/aywson/commit/ecb789cbfb037e24f87017cf3db8ea86139ad8cb) Thanks [@threepointone](https://github.com/threepointone)! - Standardize path usage examples in README
+
 ## 0.0.15
 
 ### Patch Changes
